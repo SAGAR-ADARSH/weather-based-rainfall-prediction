@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Rainfall Probability Predictor</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <div class="bg-orb orb-one"></div>
+  <div class="bg-orb orb-two"></div>
+
+  <main class="container">
+    <nav class="nav">
+      <div class="brand">
+        <div class="brand-icon">☔</div>
+        <div>
+          <strong>RainPredict</strong>
+          <span>Probability & Statistics Project</span>
+        </div>
+      </div>
+      <div class="nav-pill">Global Model</div>
+    </nav>
+
+    <section class="hero">
+      <div class="hero-copy">
+        <div class="eyebrow">WEATHER-BASED RAINFALL PREDICTION</div>
+        <h1>Predict tomorrow's<br><span>rainfall probability.</span></h1>
+        <p>
+          Select any district from the dataset. The system combines
+          weather variables, rainfall history, logistic regression and
+          a Weibull probability distribution.
+        </p>
+
+        <div class="stats" id="datasetStats">
+          <div><b>—</b><small>Districts</small></div>
+          <div><b>—</b><small>States</small></div>
+          <div><b>—</b><small>Data rows</small></div>
+        </div>
+      </div>
+
+      <div class="predict-card">
+        <div class="card-top">
+          <div>
+            <span class="card-label">DISTRICT PREDICTION</span>
+            <h2>Choose location</h2>
+          </div>
+          <div class="status-dot"></div>
+        </div>
+
+        <label for="district">District</label>
+        <div class="select-wrap">
+          <input id="district" list="districtList"
+                 placeholder="e.g. Ranchi"
+                 autocomplete="off">
+          <datalist id="districtList">
+            {% for district in districts %}
+              <option value="{{ district }}"></option>
+            {% endfor %}
+          </datalist>
+        </div>
+
+        <button id="predictBtn" onclick="predict()">
+          <span id="btnText">Predict Next Day</span>
+          <span id="spinner" class="spinner hidden"></span>
+        </button>
+
+        <p class="hint">
+          Prediction uses the latest valid weather record available
+          for the selected district.
+        </p>
+      </div>
+    </section>
+
+    <section id="errorBox" class="error hidden"></section>
+
+    <section id="result" class="results hidden">
+      <div class="result-header">
+        <div>
+          <span class="eyebrow">FORECAST RESULT</span>
+          <h2 id="locationTitle">—</h2>
+          <p id="dateText">—</p>
+        </div>
+        <div id="category" class="category">—</div>
+      </div>
+
+      <div class="main-probability">
+        <div class="prob-ring">
+          <div>
+            <strong id="rainProbability">0%</strong>
+            <span>chance of rain</span>
+          </div>
+        </div>
+
+        <div class="forecast-summary">
+          <span class="mini-label">EXPECTED RAINFALL</span>
+          <strong><span id="expectedRainfall">0</span> mm</strong>
+          <p>
+            If rain occurs, the fitted Weibull distribution estimates
+            <b><span id="expectedWet">0</span> mm</b> on average.
+          </p>
+        </div>
+      </div>
+
+      <div class="grid">
+        <div class="panel">
+          <div class="panel-title">Current weather</div>
+          <div class="weather-grid">
+            <div class="metric"><span>🌡</span><b id="temp">—</b><small>Temperature</small></div>
+            <div class="metric"><span>💧</span><b id="humidity">—</b><small>Humidity</small></div>
+            <div class="metric"><span>◉</span><b id="pressure">—</b><small>Pressure</small></div>
+            <div class="metric"><span>≋</span><b id="wind">—</b><small>Wind</small></div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-title">Rainfall thresholds</div>
+          <div class="thresholds">
+            <div><span>&gt; 10 mm</span><b id="above10">0%</b></div>
+            <div><span>&gt; 20 mm</span><b id="above20">0%</b></div>
+            <div><span>&gt; 30 mm</span><b id="above30">0%</b></div>
+            <div><span>&gt; 50 mm</span><b id="above50">0%</b></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="model-note">
+        <div>
+          <b>Probability model</b>
+          <span>Logistic Regression + Weibull distribution</span>
+        </div>
+        <div>
+          <b>Heavy rain probability</b>
+          <span id="heavyProbability">0%</span>
+        </div>
+      </div>
+    </section>
+
+    <footer>
+      <span>Weather-Based Rainfall Prediction</span>
+      <span>For academic/project use</span>
+    </footer>
+  </main>
+
+<script>
+async function loadInfo() {
+  try {
+    const response = await fetch("/api/info");
+    const data = await response.json();
+
+    const stats = document.querySelectorAll("#datasetStats div b");
+    stats[0].textContent = data.districts;
+    stats[1].textContent = data.states;
+    stats[2].textContent = data.rows.toLocaleString();
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+function setText(id, value) {
+  document.getElementById(id).textContent = value;
+}
+
+async function predict() {
+  const district = document.getElementById("district").value.trim();
+  const button = document.getElementById("predictBtn");
+  const spinner = document.getElementById("spinner");
+  const btnText = document.getElementById("btnText");
+  const result = document.getElementById("result");
+  const error = document.getElementById("errorBox");
+
+  error.classList.add("hidden");
+
+  if (!district) {
+    error.textContent = "Please enter a district name.";
+    error.classList.remove("hidden");
+    return;
+  }
+
+  button.disabled = true;
+  spinner.classList.remove("hidden");
+  btnText.textContent = "Calculating...";
+
+  try {
+    const response = await fetch("/api/predict", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({district})
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || "Prediction failed.");
+    }
+
+    setText("locationTitle", `${data.district}, ${data.state}`);
+    setText(
+      "dateText",
+      `Latest valid data: ${data.latest_valid_date}  •  Prediction: ${data.prediction_date}`
+    );
+
+    setText("rainProbability",
+      `${data.prediction.rain_probability.toFixed(1)}%`
+    );
+
+    setText("expectedRainfall",
+      data.prediction.expected_rainfall.toFixed(2)
+    );
+
+    setText("expectedWet",
+      data.prediction.expected_if_wet.toFixed(2)
+    );
+
+    setText("temp",
+      `${data.weather.temperature.toFixed(1)} °C`
+    );
+
+    setText("humidity",
+      `${data.weather.humidity.toFixed(1)} %`
+    );
+
+    setText("pressure",
+      `${data.weather.pressure.toFixed(2)} kPa`
+    );
+
+    setText("wind",
+      `${data.weather.wind.toFixed(1)} m/s`
+    );
+
+    setText("above10",
+      `${data.prediction.above_10.toFixed(1)}%`
+    );
+
+    setText("above20",
+      `${data.prediction.above_20.toFixed(1)}%`
+    );
+
+    setText("above30",
+      `${data.prediction.above_30.toFixed(1)}%`
+    );
+
+    setText("above50",
+      `${data.prediction.above_50.toFixed(1)}%`
+    );
+
+    setText("heavyProbability",
+      `${data.prediction.heavy_rain_probability.toFixed(1)}%`
+    );
+
+    const category = document.getElementById("category");
+    category.textContent = data.prediction.category;
+
+    category.className = "category";
+    if (data.prediction.rain_probability >= 60) {
+      category.classList.add("high");
+    } else if (data.prediction.rain_probability >= 30) {
+      category.classList.add("medium");
+    } else {
+      category.classList.add("low");
+    }
+
+    result.classList.remove("hidden");
+    result.scrollIntoView({behavior: "smooth", block: "start"});
+
+  } catch (e) {
+    error.textContent = e.message;
+    error.classList.remove("hidden");
+    result.classList.add("hidden");
+  } finally {
+    button.disabled = false;
+    spinner.classList.add("hidden");
+    btnText.textContent = "Predict Next Day";
+  }
+}
+
+document.getElementById("district").addEventListener("keydown", e => {
+  if (e.key === "Enter") predict();
+});
+
+loadInfo();
+</script>
+</body>
+</html>
