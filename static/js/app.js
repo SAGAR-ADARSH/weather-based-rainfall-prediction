@@ -97,6 +97,9 @@ const map = createDistrictMap("map", {
     if (d) chooseDistrict(d);
   },
   reducedMotion,
+  onTileError: () => {
+    setMapStatus("Base map tiles are unavailable. District boundaries are still shown.", true);
+  },
 });
 
 // ---------------------------------------------------------------------------

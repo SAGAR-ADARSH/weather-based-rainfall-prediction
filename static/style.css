@@ -286,9 +286,9 @@ body {
   background: #0a1a2f;
 }
 
-/* Dark, blue-toned treatment of OpenStreetMap raster tiles */
+/* Basemap tiles are already dark; soften slightly to match the glass UI */
 .leaflet-container .osm-tiles {
-  filter: invert(1) hue-rotate(180deg) brightness(.66) contrast(1.08) saturate(.55);
+  filter: brightness(.9) saturate(.8);
 }
 .leaflet-container { font-family: inherit; background: #0a1a2f; }
 

@@ -5,7 +5,16 @@
 
 const INDIA_BOUNDS = L.latLngBounds([6.0, 67.5], [37.6, 97.6]);
 const GEOJSON_URL = "/static/data/india_districts.geojson";
-const TILE_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
+// Basemap. The public tile.openstreetmap.org server blocks app-style traffic
+// (HTTP 403 "Access blocked" under its tile usage policy), so this uses a
+// dark basemap built on OpenStreetMap data. Change TILE_URL and ATTRIBUTION
+// to switch providers. For production traffic, use a commercial provider or
+// your own tile server.
+const TILE_URL = "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png";
+const TILE_SUBDOMAINS = "abcd";
+const ATTRIBUTION =
+  '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors ' +
+  '&copy; <a href="https://carto.com/attributions">CARTO</a>';
 
 export const keyOf = (state, district) => `${state}|${district}`;
 
@@ -14,7 +23,7 @@ const BASE_STYLE = {
   weight: 0.8,
 };
 
-export function createDistrictMap(containerId, { onSelect, reducedMotion }) {
+export function createDistrictMap(containerId, { onSelect, reducedMotion, onTileError }) {
   const map = L.map(containerId, {
     zoomControl: false,
     minZoom: 4,
@@ -29,11 +38,21 @@ export function createDistrictMap(containerId, { onSelect, reducedMotion }) {
 
   L.control.zoom({ position: "topleft", zoomInTitle: "Zoom in", zoomOutTitle: "Zoom out" }).addTo(map);
 
-  L.tileLayer(TILE_URL, {
+  let tileErrors = 0;
+  const basemap = L.tileLayer(TILE_URL, {
     maxZoom: 12,
+    subdomains: TILE_SUBDOMAINS,
     className: "osm-tiles",
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    referrerPolicy: "strict-origin-when-cross-origin",
+    attribution: ATTRIBUTION,
   }).addTo(map);
+  basemap.on("tileerror", () => {
+    tileErrors += 1;
+    if (tileErrors === 3 && onTileError) onTileError();
+  });
+  basemap.on("tileload", () => {
+    tileErrors = 0;
+  });
 
   const polygonByKey = new Map();
   const pointByKey = new Map();

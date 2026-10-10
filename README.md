@@ -84,4 +84,4 @@ The home page now shows an interactive Leaflet map of India with district bounda
 - The boundary source is not the latest administrative vintage. Some dataset districts (for example, those created in 2020–2025) are matched to the closest polygon in that source, and the report marks these matches.
 - Polygons are simplified (~900 m) for web use.
 - Any district without a usable polygon is shown as a coordinate marker. No boundary is invented.
-- OpenStreetMap tiles require internet access from the viewer's browser.
+- Basemap: the public `tile.openstreetmap.org` server returns HTTP 403 ("Access blocked") to app traffic under its tile usage policy, so the map uses CARTO's dark basemap, which is built on OpenStreetMap data. It needs internet access from the viewer's browser. To change providers, edit `TILE_URL` and `ATTRIBUTION` in `static/js/district-map.js`. For production traffic, use a commercial tile provider or your own tile server.
