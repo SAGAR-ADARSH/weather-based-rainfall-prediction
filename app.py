@@ -159,13 +159,16 @@ def weibull_sf(threshold):
 def clean_name(value):
     return str(value).strip().lower()
 
-def find_district(name):
+def find_district(name, state=None):
     key = clean_name(name)
     matches = df[df["District"].astype(str).str.strip().str.lower() == key]
+    if state:
+        state_key = clean_name(state)
+        matches = matches[matches["State"].astype(str).str.strip().str.lower() == state_key]
     return matches.copy()
 
-def predict_for_district(name):
-    district_data = find_district(name)
+def predict_for_district(name, state=None):
+    district_data = find_district(name, state)
 
     if district_data.empty:
         return {"error": "District not found."}
@@ -262,10 +265,11 @@ def index():
 def api_predict():
     data = request.get_json(silent=True) or {}
     district = data.get("district", "")
+    state = data.get("state") or None
     if not district.strip():
         return jsonify({"error": "Please select or enter a district."}), 400
 
-    result = predict_for_district(district)
+    result = predict_for_district(district, state)
     status = 200 if "error" not in result else 404
     return jsonify(result), status
 
@@ -280,6 +284,80 @@ def api_info():
         "weibull_shape": float(weibull_shape),
         "weibull_scale": float(weibull_scale),
         "wet_day_mean": float(weibull_mean),
+    })
+
+# -----------------------------
+# Map support (additive; does not change the model)
+# -----------------------------
+COORD_FILE = "district_coordinates.csv"
+
+def load_district_coordinates():
+    try:
+        coords = pd.read_csv(COORD_FILE)
+    except (OSError, ValueError):
+        return {}
+    coords = coords.dropna(subset=["State", "District"])
+    return {
+        (clean_name(r.State), clean_name(r.District)): (
+            float(r.Latitude), float(r.Longitude)
+        )
+        for r in coords.itertuples(index=False)
+        if pd.notna(r.Latitude) and pd.notna(r.Longitude)
+    }
+
+DISTRICT_COORDS = load_district_coordinates()
+
+@app.route("/api/districts")
+def api_districts():
+    pairs = (
+        df[["State", "District"]]
+        .dropna()
+        .drop_duplicates()
+        .sort_values(["State", "District"])
+    )
+    items = []
+    for row in pairs.itertuples(index=False):
+        coord = DISTRICT_COORDS.get((clean_name(row.State), clean_name(row.District)))
+        items.append({
+            "district": str(row.District),
+            "state": str(row.State),
+            "latitude": coord[0] if coord else None,
+            "longitude": coord[1] if coord else None,
+        })
+    return jsonify({"districts": items})
+
+@app.route("/api/history", methods=["GET"])
+def api_history():
+    """Real observed daily rainfall for one district (not simulated)."""
+    name = request.args.get("district", "")
+    state = request.args.get("state")
+    try:
+        days = max(7, min(365, int(request.args.get("days", 60))))
+    except ValueError:
+        days = 60
+
+    if not name.strip():
+        return jsonify({"error": "Please select a district."}), 400
+
+    data = find_district(name, state)
+    if data.empty:
+        return jsonify({"error": "District not found."}), 404
+
+    data = data.sort_values("Date").tail(days)
+    rows = [
+        {
+            "date": r.Date.strftime("%Y-%m-%d"),
+            "rainfall_mm": None if pd.isna(r.imd_daily_rainfall_mm)
+            else float(r.imd_daily_rainfall_mm),
+        }
+        for r in data.itertuples(index=False)
+    ]
+    return jsonify({
+        "district": str(data["District"].iloc[0]),
+        "state": str(data["State"].iloc[0]),
+        "source": "IMD daily rainfall observations in combined_rainfall_weather.csv",
+        "days": len(rows),
+        "observations": rows,
     })
 
 if __name__ == "__main__":

@@ -3,282 +3,234 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Rainfall Probability Predictor</title>
+  <meta name="description" content="RainPredict: select an Indian district on the interactive map and view its next-day rainfall probability from the logistic regression and Weibull model.">
+  <title>RainPredict — District Rainfall Probability Map</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='vendor/leaflet/leaflet.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
-  <div class="bg-orb orb-one"></div>
-  <div class="bg-orb orb-two"></div>
+  <div class="bg-orb orb-one" aria-hidden="true"></div>
+  <div class="bg-orb orb-two" aria-hidden="true"></div>
 
-  <main class="container">
-    <nav class="nav">
+  <header class="topbar">
+    <div class="container topbar-inner">
       <div class="brand">
-        <div class="brand-icon">☔</div>
+        <div class="brand-icon" aria-hidden="true">☔</div>
         <div>
           <strong>RainPredict</strong>
-          <span>Probability & Statistics Project</span>
+          <span>Probability &amp; Statistics Project</span>
         </div>
       </div>
-      <div class="nav-pill">Global Model</div>
-    </nav>
+      <div class="nav-right">
+        <span class="nav-pill" id="datasetCoverage">Historical dataset</span>
+        <span class="nav-pill nav-pill-muted">Global model</span>
+      </div>
+    </div>
+  </header>
 
+  <main class="container">
     <section class="hero">
       <div class="hero-copy">
         <div class="eyebrow">WEATHER-BASED RAINFALL PREDICTION</div>
         <h1>Predict tomorrow's<br><span>rainfall probability.</span></h1>
         <p>
-          Select any district from the dataset. The system combines
-          weather variables, rainfall history, logistic regression and
-          a Weibull probability distribution.
+          Select any district on the map. The system combines weather variables,
+          rainfall history, logistic regression and a fitted Weibull distribution.
         </p>
-
         <div class="stats" id="datasetStats">
           <div><b>—</b><small>Districts</small></div>
           <div><b>—</b><small>States</small></div>
           <div><b>—</b><small>Data rows</small></div>
         </div>
       </div>
-
-      <div class="predict-card">
-        <div class="card-top">
-          <div>
-            <span class="card-label">DISTRICT PREDICTION</span>
-            <h2>Choose location</h2>
-          </div>
-          <div class="status-dot"></div>
-        </div>
-
-        <label for="district">District</label>
-        <div class="select-wrap">
-          <input id="district" list="districtList"
-                 placeholder="e.g. Ranchi"
-                 autocomplete="off">
-          <datalist id="districtList">
-            {% for district in districts %}
-              <option value="{{ district }}"></option>
-            {% endfor %}
-          </datalist>
-        </div>
-
-        <button id="predictBtn" onclick="predict()">
-          <span id="btnText">Predict Next Day</span>
-          <span id="spinner" class="spinner hidden"></span>
-        </button>
-
-        <p class="hint">
-          Prediction uses the latest valid weather record available
-          for the selected district.
-        </p>
-      </div>
     </section>
 
-    <section id="errorBox" class="error hidden"></section>
-
-    <section id="result" class="results hidden">
-      <div class="result-header">
-        <div>
-          <span class="eyebrow">FORECAST RESULT</span>
-          <h2 id="locationTitle">—</h2>
-          <p id="dateText">—</p>
+    <section class="explorer" aria-label="District map and prediction">
+      <div class="control-bar glass">
+        <div class="search-block">
+          <label for="districtSearch" class="field-label">District</label>
+          <div class="combobox">
+            <input id="districtSearch" type="text" autocomplete="off"
+                   placeholder="Search a district, e.g. Ranchi"
+                   role="combobox" aria-expanded="false" aria-autocomplete="list"
+                   aria-controls="districtList" aria-describedby="searchHint">
+            <ul id="districtList" class="suggestions hidden" role="listbox" aria-label="Matching districts"></ul>
+          </div>
+          <p id="searchHint" class="hint">Search or click a district on the map. The map centres on the district; press Predict to run the model.</p>
         </div>
-        <div id="category" class="category">—</div>
+
+        <div class="action-block">
+          <button id="predictBtn" class="btn-primary" type="button" disabled>
+            <span id="btnText">Predict Next Day</span>
+            <span id="spinner" class="spinner hidden" aria-hidden="true"></span>
+          </button>
+          <button id="resetViewBtn" class="btn-ghost" type="button">Reset to India</button>
+        </div>
       </div>
 
-      <div class="main-probability">
-        <div class="prob-ring">
+      <div class="map-stage" id="mapStage">
+      <div class="map-frame" id="mapFrame">
+        <div id="map" class="map" role="region" aria-label="Interactive map of Indian districts"></div>
+
+        <div class="selection-chip glass" id="selectionChip" aria-live="polite">
+          <span class="chip-dot" aria-hidden="true"></span>
           <div>
-            <strong id="rainProbability">0%</strong>
-            <span>chance of rain</span>
+            <strong id="selectionName">No district selected</strong>
+            <small id="selectionMeta">Click a district or use search</small>
           </div>
         </div>
 
-        <div class="forecast-summary">
-          <span class="mini-label">EXPECTED RAINFALL</span>
-          <strong><span id="expectedRainfall">0</span> mm</strong>
-          <p>
-            If rain occurs, the fitted Weibull distribution estimates
-            <b><span id="expectedWet">0</span> mm</b> on average.
-          </p>
-        </div>
-      </div>
+        <div class="map-status hidden" id="mapStatus" role="status"></div>
 
-      <div class="grid">
-        <div class="panel">
-          <div class="panel-title">Current weather</div>
-          <div class="weather-grid">
-            <div class="metric"><span>🌡</span><b id="temp">—</b><small>Temperature</small></div>
-            <div class="metric"><span>💧</span><b id="humidity">—</b><small>Humidity</small></div>
-            <div class="metric"><span>◉</span><b id="pressure">—</b><small>Pressure</small></div>
-            <div class="metric"><span>≋</span><b id="wind">—</b><small>Wind</small></div>
+        <!-- Decorative weather layer: separate from the map, never receives pointer input -->
+        <div class="weather-fx" id="weatherFx" aria-hidden="true">
+          <div class="rain-tint" id="rainTint"></div>
+          <div class="cloud-field" id="cloudField">
+            <div class="cloud-layer layer-far"><i class="cloud c1"></i><i class="cloud c2"></i><i class="cloud c3"></i></div>
+            <div class="cloud-layer layer-mid"><i class="cloud c4"></i><i class="cloud c5"></i><i class="cloud c6"></i></div>
+            <div class="cloud-layer layer-near"><i class="cloud c7"></i><i class="cloud c8"></i></div>
           </div>
+          <canvas id="rainCanvas"></canvas>
         </div>
 
-        <div class="panel">
-          <div class="panel-title">Rainfall thresholds</div>
-          <div class="thresholds">
-            <div><span>&gt; 10 mm</span><b id="above10">0%</b></div>
-            <div><span>&gt; 20 mm</span><b id="above20">0%</b></div>
-            <div><span>&gt; 30 mm</span><b id="above30">0%</b></div>
-            <div><span>&gt; 50 mm</span><b id="above50">0%</b></div>
+        <details class="legend glass" id="legend" open>
+          <summary>Map legend</summary>
+          <ul>
+            <li><span class="swatch swatch-district"></span>District boundary</li>
+            <li><span class="swatch swatch-selected"></span>Selected district</li>
+            <li><span class="swatch swatch-point"></span>Coordinate only (no boundary available)</li>
+          </ul>
+          <div class="legend-title">Forecast animation (display only)</div>
+          <ul class="tiers" id="tierLegend">
+            <li data-tier="0"><span class="tier-bar"></span>&lt; 10% rain chance · no precipitation</li>
+            <li data-tier="1"><span class="tier-bar"></span>10–29% · light, restrained</li>
+            <li data-tier="2"><span class="tier-bar"></span>30–59% · moderate</li>
+            <li data-tier="3"><span class="tier-bar"></span>60–79% · heavy</li>
+            <li data-tier="4"><span class="tier-bar"></span>≥ 80% · very heavy</li>
+          </ul>
+          <p class="legend-note">Clouds and streaks are illustrative visualisations of the model probability. They are not radar, satellite or observed precipitation.</p>
+        </details>
+
+      </div>
+
+        <aside class="forecast-card glass" id="forecastCard" aria-live="polite" aria-label="Forecast">
+          <div id="fcEmpty" class="fc-state">
+            <div class="fc-icon" aria-hidden="true">◌</div>
+            <h3>No forecast yet</h3>
+            <p>Choose a district and press <b>Predict Next Day</b>. The forecast is produced by the existing model; nothing is estimated in the browser.</p>
           </div>
-        </div>
+
+          <div id="fcLoading" class="fc-state hidden">
+            <span class="spinner big" aria-hidden="true"></span>
+            <h3>Calculating forecast…</h3>
+            <p id="fcLoadingText">Running the logistic regression and Weibull model for the selected district.</p>
+          </div>
+
+          <div id="fcError" class="fc-state hidden">
+            <div class="fc-icon error-icon" aria-hidden="true">!</div>
+            <h3>Forecast unavailable</h3>
+            <p id="fcErrorText">Something went wrong.</p>
+          </div>
+
+          <div id="fcResult" class="fc-result hidden">
+            <div class="fc-head">
+              <div>
+                <span class="card-label">NEXT-DAY FORECAST</span>
+                <h2 id="fcTitle">—</h2>
+              </div>
+              <span id="fcCategory" class="category">—</span>
+            </div>
+
+            <div class="fc-main">
+              <div class="ring-wrap">
+                <svg class="ring" viewBox="0 0 120 120" aria-hidden="true">
+                  <circle class="ring-track" cx="60" cy="60" r="52"></circle>
+                  <circle id="ringFg" class="ring-fg" cx="60" cy="60" r="52"></circle>
+                </svg>
+                <div class="ring-center">
+                  <strong id="fcRain">0%</strong>
+                  <span>chance of rain</span>
+                </div>
+              </div>
+              <div class="fc-amount">
+                <span class="mini-label">EXPECTED RAINFALL</span>
+                <strong><span id="fcExpected">0.00</span> mm</strong>
+                <p>Rain probability × average wet-day rainfall (Weibull mean).</p>
+                <span class="mini-label">IF IT RAINS</span>
+                <p class="wet-line">Average <b><span id="fcWet">0.00</span> mm</b> on a wet day</p>
+              </div>
+            </div>
+
+            <div class="fc-section">
+              <div class="fc-section-title">Probability of exceeding threshold</div>
+              <p class="fc-note">Unconditional: rain probability × Weibull P(X &gt; threshold | wet day).</p>
+              <div class="exceed-list">
+                <div class="exceed-row"><span>&gt; 10 mm</span><div class="bar"><i id="barAbove10"></i></div><b id="fcAbove10">0%</b></div>
+                <div class="exceed-row"><span>&gt; 20 mm</span><div class="bar"><i id="barAbove20"></i></div><b id="fcAbove20">0%</b></div>
+                <div class="exceed-row"><span>&gt; 30 mm</span><div class="bar"><i id="barAbove30"></i></div><b id="fcAbove30">0%</b></div>
+                <div class="exceed-row"><span>&gt; 50 mm</span><div class="bar"><i id="barAbove50"></i></div><b id="fcAbove50">0%</b></div>
+              </div>
+            </div>
+
+            <div class="fc-section">
+              <div class="fc-section-title">Latest valid observation</div>
+              <div class="weather-grid">
+                <div class="metric"><b id="fcTemp">—</b><small>Temperature</small></div>
+                <div class="metric"><b id="fcHumidity">—</b><small>Humidity</small></div>
+                <div class="metric"><b id="fcPressure">—</b><small>Pressure</small></div>
+                <div class="metric"><b id="fcWind">—</b><small>Wind</small></div>
+                <div class="metric"><b id="fcToday">—</b><small>Rain that day</small></div>
+              </div>
+            </div>
+
+            <div class="dates">
+              <div><span>Observation date</span><b id="fcObsDate">—</b></div>
+              <div><span>Forecast for</span><b id="fcForecastDate">—</b></div>
+            </div>
+            <p class="archive-note" id="fcArchiveNote">Archived historical data — not a live feed.</p>
+            <p class="archive-note">Heavy-rain model (&gt;20 mm, logistic): <b id="fcHeavy">—</b></p>
+          </div>
+        </aside>
       </div>
 
-      <div class="model-note">
-        <div>
-          <b>Probability model</b>
-          <span>Logistic Regression + Weibull distribution</span>
-        </div>
-        <div>
-          <b>Heavy rain probability</b>
-          <span id="heavyProbability">0%</span>
-        </div>
-      </div>
+      <div id="errorBox" class="error hidden" role="alert"></div>
     </section>
 
-    <footer>
-      <span>Weather-Based Rainfall Prediction</span>
-      <span>For academic/project use</span>
+    <section class="charts" aria-label="Statistical charts">
+      <article class="panel chart-panel">
+        <div class="panel-title">Weibull density of wet-day rainfall</div>
+        <p class="panel-sub" id="weibullSub">Global fit across all districts (fitted parameters from the model).</p>
+        <svg id="chartWeibull" class="chart" viewBox="0 0 520 260" role="img" aria-label="Weibull probability density curve"></svg>
+        <div class="readout" id="weibullReadout">Hover over the curve to read values.</div>
+      </article>
+
+      <article class="panel chart-panel">
+        <div class="panel-title">Threshold exceedance</div>
+        <p class="panel-sub">Probability of rainfall above each threshold on the forecast day.</p>
+        <svg id="chartExceed" class="chart" viewBox="0 0 520 260" role="img" aria-label="Bar chart of exceedance probabilities"></svg>
+      </article>
+
+      <article class="panel chart-panel chart-wide">
+        <div class="panel-title">Observed daily rainfall — last 60 days</div>
+        <p class="panel-sub" id="historySub">Select a district to load its observed IMD rainfall.</p>
+        <svg id="chartHistory" class="chart" viewBox="0 0 900 240" role="img" aria-label="Historical daily rainfall for the selected district"></svg>
+      </article>
+    </section>
+
+    <footer class="site-footer">
+      <div>
+        <span>Weather-Based Rainfall Prediction</span>
+        <span>For academic/project use — a prototype, not an operational forecast.</span>
+      </div>
+      <div class="sources">
+        <span>Map © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors</span>
+        <span>District boundaries: <a href="https://github.com/datta07/INDIAN-SHAPEFILES" target="_blank" rel="noopener">datta07/INDIAN-SHAPEFILES</a> (MIT), simplified for web use</span>
+        <span>Map library: <a href="https://leafletjs.com" target="_blank" rel="noopener">Leaflet</a></span>
+      </div>
     </footer>
   </main>
 
-<script>
-async function loadInfo() {
-  try {
-    const response = await fetch("/api/info");
-    const data = await response.json();
-
-    const stats = document.querySelectorAll("#datasetStats div b");
-    stats[0].textContent = data.districts;
-    stats[1].textContent = data.states;
-    stats[2].textContent = data.rows.toLocaleString();
-  } catch (e) {
-    console.error(e);
-  }
-}
-
-function setText(id, value) {
-  document.getElementById(id).textContent = value;
-}
-
-async function predict() {
-  const district = document.getElementById("district").value.trim();
-  const button = document.getElementById("predictBtn");
-  const spinner = document.getElementById("spinner");
-  const btnText = document.getElementById("btnText");
-  const result = document.getElementById("result");
-  const error = document.getElementById("errorBox");
-
-  error.classList.add("hidden");
-
-  if (!district) {
-    error.textContent = "Please enter a district name.";
-    error.classList.remove("hidden");
-    return;
-  }
-
-  button.disabled = true;
-  spinner.classList.remove("hidden");
-  btnText.textContent = "Calculating...";
-
-  try {
-    const response = await fetch("/api/predict", {
-      method: "POST",
-      headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({district})
-    });
-
-    const data = await response.json();
-
-    if (!response.ok) {
-      throw new Error(data.error || "Prediction failed.");
-    }
-
-    setText("locationTitle", `${data.district}, ${data.state}`);
-    setText(
-      "dateText",
-      `Latest valid data: ${data.latest_valid_date}  •  Prediction: ${data.prediction_date}`
-    );
-
-    setText("rainProbability",
-      `${data.prediction.rain_probability.toFixed(1)}%`
-    );
-
-    setText("expectedRainfall",
-      data.prediction.expected_rainfall.toFixed(2)
-    );
-
-    setText("expectedWet",
-      data.prediction.expected_if_wet.toFixed(2)
-    );
-
-    setText("temp",
-      `${data.weather.temperature.toFixed(1)} °C`
-    );
-
-    setText("humidity",
-      `${data.weather.humidity.toFixed(1)} %`
-    );
-
-    setText("pressure",
-      `${data.weather.pressure.toFixed(2)} kPa`
-    );
-
-    setText("wind",
-      `${data.weather.wind.toFixed(1)} m/s`
-    );
-
-    setText("above10",
-      `${data.prediction.above_10.toFixed(1)}%`
-    );
-
-    setText("above20",
-      `${data.prediction.above_20.toFixed(1)}%`
-    );
-
-    setText("above30",
-      `${data.prediction.above_30.toFixed(1)}%`
-    );
-
-    setText("above50",
-      `${data.prediction.above_50.toFixed(1)}%`
-    );
-
-    setText("heavyProbability",
-      `${data.prediction.heavy_rain_probability.toFixed(1)}%`
-    );
-
-    const category = document.getElementById("category");
-    category.textContent = data.prediction.category;
-
-    category.className = "category";
-    if (data.prediction.rain_probability >= 60) {
-      category.classList.add("high");
-    } else if (data.prediction.rain_probability >= 30) {
-      category.classList.add("medium");
-    } else {
-      category.classList.add("low");
-    }
-
-    result.classList.remove("hidden");
-    result.scrollIntoView({behavior: "smooth", block: "start"});
-
-  } catch (e) {
-    error.textContent = e.message;
-    error.classList.remove("hidden");
-    result.classList.add("hidden");
-  } finally {
-    button.disabled = false;
-    spinner.classList.add("hidden");
-    btnText.textContent = "Predict Next Day";
-  }
-}
-
-document.getElementById("district").addEventListener("keydown", e => {
-  if (e.key === "Enter") predict();
-});
-
-loadInfo();
-</script>
+  <script src="{{ url_for('static', filename='vendor/leaflet/leaflet.js') }}"></script>
+  <script type="module" src="{{ url_for('static', filename='js/app.js') }}"></script>
 </body>
 </html>
